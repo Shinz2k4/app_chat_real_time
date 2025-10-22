@@ -1,0 +1,79 @@
+services:
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - MONGO_URI=${MONGO_URI}
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      - mongo
+    networks:
+      - chat-network
+
+  user-service:
+    build: ./user-service
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=production
+      - PORT=3002
+      - MONGO_URI=${MONGO_URI}
+      - AUTH_SERVICE_URL=http://auth-service:3001
+    depends_on:
+      - mongo
+      - auth-service
+    networks:
+      - chat-network
+
+  chat-service:
+    build: ./chat-service
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=production
+      - PORT=3003
+      - MONGO_URI=${MONGO_URI}
+      - AUTH_SERVICE_URL=http://auth-service:3001
+      - USER_SERVICE_URL=http://user-service:3002
+    depends_on:
+      - mongo
+      - auth-service
+      - user-service
+    networks:
+      - chat-network
+
+  frontend-service:
+    build: ./frontend-service
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - AUTH_SERVICE_URL=http://auth-service:3001
+      - USER_SERVICE_URL=http://user-service:3002
+      - CHAT_SERVICE_URL=http://chat-service:3003
+    depends_on:
+      - auth-service
+      - user-service
+      - chat-service
+    networks:
+      - chat-network
+
+  mongo:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - chat-network
+
+volumes:
+  mongo_data:
+
+networks:
+  chat-network:
+    driver: bridge

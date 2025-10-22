@@ -1,0 +1,15 @@
+/* Responsive Styles - Media queries for different screen sizes */
+
+@media (max-width: 768px) {
+    .main-content {
+        flex-direction: column;
+    }
+    
+    .sidebar {
+        width: 100%;
+    }
+    
+    .header h1 {
+        font-size: 2rem;
+    }
+}

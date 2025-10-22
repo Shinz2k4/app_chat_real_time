@@ -1,0 +1,29 @@
+{
+  "name": "chat-app-microservices",
+  "version": "1.0.0",
+  "description": "Real-time chat application with microservices architecture",
+  "scripts": {
+    "start": "docker compose up --build",
+    "start:detached": "docker compose up --build -d",
+    "stop": "docker compose down",
+    "logs": "docker compose logs -f",
+    "test": "node test-api.js",
+    "dev:auth": "cd auth-service && npm run dev",
+    "dev:user": "cd user-service && npm run dev",
+    "dev:chat": "cd chat-service && npm run dev"
+  },
+  "devDependencies": {
+    "axios": "^1.12.2"
+  },
+  "keywords": [
+    "chat",
+    "realtime",
+    "microservices",
+    "socket.io",
+    "express",
+    "mongodb",
+    "docker"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat App - Microservices</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.socket.io/4.7.2/socket.io.min.js" rel="preload" as="script">
+    <link href="styles/main.css" rel="stylesheet">
+    <link href="styles/components.css" rel="stylesheet">
+    <link href="styles/responsive.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Login Screen -->
+        <div id="loginScreen" class="login-form">
+            <h2><i class="fas fa-comments"></i> Chat App</h2>
+            <div id="loginError" class="error-message hidden"></div>
+            <div id="loginSuccess" class="success-message hidden"></div>
+            
+            <div class="form-group">
+                <label for="usernameOrEmail">Username or Email:</label>
+                <input type="text" id="usernameOrEmail" placeholder="Enter your username or email">
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" placeholder="Enter your password">
+            </div>
+            
+            <button class="btn" onclick="login()">Login</button>
+            <button class="btn btn-secondary" onclick="showRegister()">Register</button>
+        </div>
+
+        <!-- Register Screen -->
+        <div id="registerScreen" class="login-form hidden">
+            <h2><i class="fas fa-user-plus"></i> Register</h2>
+            <div id="registerError" class="error-message hidden"></div>
+            <div id="registerSuccess" class="success-message hidden"></div>
+            
+            <div class="form-group">
+                <label for="regFullName">Full Name:</label>
+                <input type="text" id="regFullName" placeholder="Enter your full name" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="regUsername">Username:</label>
+                <input type="text" id="regUsername" placeholder="Choose a username" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="regEmail">Email:</label>
+                <input type="email" id="regEmail" placeholder="Enter your email" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="regDateOfBirth">Date of Birth:</label>
+                <input type="date" id="regDateOfBirth" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="regPassword">Password:</label>
+                <input type="password" id="regPassword" placeholder="Choose a password" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="regAvatar">Avatar (Optional):</label>
+                <input type="file" id="regAvatar" accept="image/*" onchange="previewAvatar()">
+                <div id="avatarPreview" class="avatar-preview hidden">
+                    <img id="avatarPreviewImg" src="" alt="Avatar Preview">
+                </div>
+            </div>
+            
+            <button class="btn" onclick="register()">Register</button>
+            <button class="btn btn-secondary" onclick="showLogin()">Back to Login</button>
+        </div>
+
+        <!-- Main Chat Interface -->
+        <div id="chatInterface" class="hidden">
+            <div class="header">
+                <h1><i class="fas fa-comments"></i> Chat App</h1>
+                <p>Welcome, <span id="currentUser"></span>!</p>
+            </div>
+
+            <div class="main-content">
+                <!-- Sidebar -->
+                <div class="sidebar">
+                    <div id="statusIndicator" class="status-indicator disconnected">
+                        Disconnected
+                    </div>
+                    
+                    <div class="search-section">
+                        <h4>Search Users</h4>
+                        <div class="search-input">
+                            <input type="text" id="searchUser" placeholder="Search by username...">
+                            <button class="btn btn-primary" onclick="searchUsers()">Search</button>
+                        </div>
+                        <div id="searchResults" class="search-results">
+                            <!-- Search results will be displayed here -->
+                        </div>
+                    </div>
+                    
+                    
+                    <div class="friend-requests" id="friendRequests">
+                        <h4>Friend Requests</h4>
+                        <div id="requestsList">
+                            <!-- Friend requests will be loaded here -->
+                        </div>
+                    </div>
+                    
+                    <div class="friends-list" id="friendsList">
+                        <h4>Friends</h4>
+                        <!-- Friends will be loaded here -->
+                    </div>
+                    
+                    <button class="btn btn-danger" onclick="logout()">Logout</button>
+                </div>
+
+                <!-- Chat Area -->
+                <div class="chat-area">
+                    <div class="chat-header">
+                        <h3 id="chatTitle">Select a friend to start chatting</h3>
+                    </div>
+                    
+                    <div class="chat-messages" id="chatMessages">
+                        <div style="text-align: center; color: #666; margin-top: 50px;">
+                            <i class="fas fa-comments" style="font-size: 3rem; margin-bottom: 20px;"></i>
+                            <p>Select a friend from the sidebar to start chatting!</p>
+                        </div>
+                    </div>
+                    
+                    <div id="typingIndicator" class="typing-indicator hidden"></div>
+                    
+                    <div class="chat-input">
+                        <input type="text" id="messageInput" placeholder="Type your message..." disabled>
+                        <button class="btn" onclick="sendMessage()" disabled id="sendBtn">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
