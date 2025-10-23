@@ -2,18 +2,35 @@ const express = require('express');
 const path = require('path');
 const cors = require('cors');
 const axios = require('axios');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+// Conditionally apply JSON parser (skip for multipart to avoid consuming the stream)
+const jsonParser = express.json();
+app.use((req, res, next) => {
+  const ct = (req.headers['content-type'] || '').toLowerCase();
+  if (req.method === 'GET' || req.method === 'HEAD') return next();
+  if (ct.includes('multipart/form-data')) return next();
+  return jsonParser(req, res, next);
+});
+// Serve static from built React app (dist) and legacy public assets
+const distPath = path.join(__dirname, 'dist');
+const publicPath = path.join(__dirname, 'public');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+}
+app.use(express.static(publicPath));
 
 // Serve the main page
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  const indexHtml = fs.existsSync(path.join(distPath, 'index.html'))
+    ? path.join(distPath, 'index.html')
+    : path.join(publicPath, 'index.html');
+  res.sendFile(indexHtml);
 });
 
 // Avoid favicon 404 noise
@@ -35,7 +52,7 @@ const CHAT_BASE_URL = process.env.CHAT_SERVICE_URL || 'http://chat-service:3003'
 
 // Shared axios client with timeout and no redirects of host header
 const http = axios.create({
-  timeout: 10000,
+  timeout: 30000,
   validateStatus: () => true,
 });
 
@@ -44,11 +61,15 @@ app.use('/api/auth', async (req, res) => {
   const target = `${AUTH_BASE_URL}/auth${req.url}`;
   console.log(`Proxying ${req.method} ${req.originalUrl} -> ${target}`);
   try {
+    const isMultipart = (req.headers['content-type'] || '').includes('multipart/form-data');
+    const headers = { ...req.headers };
+    delete headers.host;
     const response = await http.request({
       method: req.method,
       url: target,
-      data: req.body,
-      headers: { Authorization: req.headers['authorization'], 'Content-Type': req.headers['content-type'] },
+      data: isMultipart ? req : req.body,
+      headers,
+      maxBodyLength: Infinity
     });
     if (response.status >= 200 && response.status < 300) return res.status(response.status).json(response.data);
     return res.status(response.status || 500).json(response.data || { success: false, message: 'Auth proxy error' });
@@ -62,11 +83,15 @@ app.use('/api/users', async (req, res) => {
   const target = `${USER_BASE_URL}/users${req.url}`;
   console.log(`Proxying ${req.method} ${req.originalUrl} -> ${target}`);
   try {
+    const isMultipart = (req.headers['content-type'] || '').includes('multipart/form-data');
+    const headers = { ...req.headers };
+    delete headers.host;
     const response = await http.request({
       method: req.method,
       url: target,
-      data: req.body,
-      headers: { Authorization: req.headers['authorization'], 'Content-Type': req.headers['content-type'] },
+      data: isMultipart ? req : req.body,
+      headers,
+      maxBodyLength: Infinity
     });
     if (response.status >= 200 && response.status < 300) return res.status(response.status).json(response.data);
     return res.status(response.status || 500).json(response.data || { success: false, message: 'User proxy error' });
@@ -80,12 +105,17 @@ app.use('/api/chat', async (req, res) => {
   const target = `${CHAT_BASE_URL}/chat${req.url}`;
   console.log(`Proxying ${req.method} ${req.originalUrl} -> ${target}`);
   try {
+    const isMultipart = (req.headers['content-type'] || '').includes('multipart/form-data');
+    const headers = { ...req.headers };
+    delete headers.host;
     const response = await http.request({
       method: req.method,
       url: target,
-      data: req.body,
-      headers: { Authorization: req.headers['authorization'], 'Content-Type': req.headers['content-type'] },
+      data: isMultipart ? req : req.body,
+      headers,
+      maxBodyLength: Infinity
     });
+    console.log(`Chat service response status: ${response.status}, data:`, response.data);
     if (response.status >= 200 && response.status < 300) return res.status(response.status).json(response.data);
     return res.status(response.status || 500).json(response.data || { success: false, message: 'Chat proxy error' });
   } catch (error) {

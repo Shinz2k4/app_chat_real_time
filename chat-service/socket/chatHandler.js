@@ -62,18 +62,27 @@ class ChatHandler {
   // Handle sending messages
   async handleSendMessage(socket, data) {
     try {
-      const { receiver, message } = data;
+      const { receiver, message, messageType, attachmentUrl, attachmentName, attachmentSize } = data;
       const sender = socket.user.username;
+      const token = socket.handshake.auth.token;
 
-      if (!receiver || !message) {
+      if (!receiver) {
         socket.emit('error', {
-          message: 'Receiver and message are required'
+          message: 'Receiver is required'
+        });
+        return;
+      }
+
+      // For text messages, message is required. For attachments, URL is required
+      if (!message && !attachmentUrl) {
+        socket.emit('error', {
+          message: 'Message or attachment is required'
         });
         return;
       }
 
       // Verify friendship
-      const isFriend = await this.verifyFriendship(sender, receiver);
+      const isFriend = await this.verifyFriendship(sender, receiver, token);
       if (!isFriend) {
         socket.emit('error', {
           message: 'You can only send messages to friends'
@@ -82,39 +91,56 @@ class ChatHandler {
       }
 
       // Create message in database
-      const newMessage = new Message({
+      const messageData = {
         sender,
         receiver,
-        message: message.trim(),
+        message: message ? message.trim() : '',
+        messageType: messageType || 'text',
         timestamp: new Date()
-      });
+      };
 
-      await newMessage.save();
+      // Add attachment data if present
+      if (attachmentUrl) {
+        messageData.attachmentUrl = attachmentUrl;
+        messageData.attachmentName = attachmentName;
+        messageData.attachmentSize = attachmentSize;
+      }
 
-      // Send message to sender (confirmation)
-      socket.emit('message_sent', {
+      const newMessage = new Message(messageData);
+
+      console.log('💾 Saving message to database:', messageData);
+
+      const savedMessage = await newMessage.save();
+      console.log('✅ Message saved successfully:', savedMessage._id);
+
+      // Prepare message object for emitting
+      const messageObject = {
         id: newMessage._id,
         sender,
         receiver,
         message: newMessage.message,
+        messageType: newMessage.messageType,
         timestamp: newMessage.timestamp,
         read: false
-      });
+      };
+
+      // Add attachment data if present
+      if (newMessage.attachmentUrl) {
+        messageObject.attachmentUrl = newMessage.attachmentUrl;
+        messageObject.attachmentName = newMessage.attachmentName;
+        messageObject.attachmentSize = newMessage.attachmentSize;
+      }
+
+      // Send message to sender (confirmation)
+      socket.emit('message_sent', messageObject);
 
       // Send message to receiver if online
       const receiverSocketId = this.userSockets.get(receiver);
       if (receiverSocketId) {
-        this.io.to(receiverSocketId).emit('new_message', {
-          id: newMessage._id,
-          sender,
-          receiver,
-          message: newMessage.message,
-          timestamp: newMessage.timestamp,
-          read: false
-        });
+        this.io.to(receiverSocketId).emit('new_message', messageObject);
       }
 
-      console.log(`💬 Message sent from ${sender} to ${receiver}`);
+      console.log(`💬 Message sent from ${sender} to ${receiver} (type: ${newMessage.messageType})`);
 
     } catch (error) {
       console.error('Send message error:', error);
@@ -160,6 +186,7 @@ class ChatHandler {
     try {
       const { friendUsername } = data;
       const currentUsername = socket.user.username;
+      const token = socket.handshake.auth.token;
 
       if (!friendUsername) {
         socket.emit('error', {
@@ -169,7 +196,7 @@ class ChatHandler {
       }
 
       // Verify friendship
-      const isFriend = await this.verifyFriendship(currentUsername, friendUsername);
+      const isFriend = await this.verifyFriendship(currentUsername, friendUsername, token);
       if (!isFriend) {
         socket.emit('error', {
           message: 'You can only chat with friends'
@@ -215,26 +242,31 @@ class ChatHandler {
   }
 
   // Verify friendship between two users
-  async verifyFriendship(username1, username2) {
+  async verifyFriendship(username1, username2, token) {
     try {
+      console.log(`🔍 Verifying friendship between ${username1} and ${username2}`);
+      
       // Call user service to verify friendship
       const response = await axios.get(`${process.env.USER_SERVICE_URL}/users/verify-friendship/${username2}`, {
         headers: {
-          'Authorization': `Bearer ${this.getUserToken(username1)}`
+          'Authorization': `Bearer ${token}`
         }
       });
 
       if (response.data.success) {
+        console.log(`✅ Friendship verification response:`, response.data);
         return response.data.data.isFriend;
       }
+      
+      console.log(`⚠️ Friendship verification failed:`, response.data);
       return false;
     } catch (error) {
-      console.error('Friendship verification error:', error);
+      console.error('❌ Friendship verification error:', error.message);
       return false;
     }
   }
 
-  // Helper method to get user token
+  // Helper method to get user token (kept for backward compatibility)
   getUserToken(username) {
     return this.userTokens.get(username);
   }

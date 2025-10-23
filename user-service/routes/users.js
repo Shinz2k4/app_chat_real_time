@@ -1,7 +1,14 @@
 const express = require('express');
+const multer = require('multer');
+const cloudinary = require('../config/cloudinary');
 const User = require('../models/User');
+const Friend = require('../models/Friend');
 const { verifyToken } = require('../middleware/auth');
 const router = express.Router();
+
+// Multer memory storage for avatar uploads
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
 
 // Search users by username
 router.get('/search', verifyToken, async (req, res) => {
@@ -66,49 +73,36 @@ router.post('/add-friend', verifyToken, async (req, res) => {
       });
     }
 
-    // Get or create current user's profile
-    let currentUser = await User.findOne({ username: currentUsername });
-    if (!currentUser) {
-      currentUser = new User({ username: currentUsername });
-    }
-
     // Check if already friends or request exists
-    const existingFriend = currentUser.friends.find(f => f.username === username);
-    const existingRequest = currentUser.friendRequests.find(r => 
-      (r.from === currentUsername && r.to === username) ||
-      (r.from === username && r.to === currentUsername)
-    );
+    const existingFriendship = await Friend.findOne({
+      $or: [
+        { user1: currentUsername, user2: username },
+        { user1: username, user2: currentUsername }
+      ]
+    });
 
-    if (existingFriend && existingFriend.status === 'accepted') {
-      return res.status(400).json({
-        success: false,
-        message: 'Already friends with this user'
-      });
+    if (existingFriendship) {
+      if (existingFriendship.status === 'accepted') {
+        return res.status(400).json({
+          success: false,
+          message: 'Already friends with this user'
+        });
+      } else if (existingFriendship.status === 'pending') {
+        return res.status(400).json({
+          success: false,
+          message: 'Friend request already exists'
+        });
+      }
     }
 
-    if (existingRequest) {
-      return res.status(400).json({
-        success: false,
-        message: 'Friend request already exists'
-      });
-    }
-
-    // Add friend request
-    currentUser.friendRequests.push({
-      from: currentUsername,
-      to: username,
+    // Create friend request
+    const friendRequest = new Friend({
+      user1: currentUsername,
+      user2: username,
       status: 'pending'
     });
 
-    // Add to target user's friend requests
-    targetUser.friendRequests.push({
-      from: currentUsername,
-      to: username,
-      status: 'pending'
-    });
-
-    await currentUser.save();
-    await targetUser.save();
+    await friendRequest.save();
 
     res.json({
       success: true,
@@ -137,16 +131,12 @@ router.post('/accept-friend', verifyToken, async (req, res) => {
       });
     }
 
-    // Get current user
-    let currentUser = await User.findOne({ username: currentUsername });
-    if (!currentUser) {
-      currentUser = new User({ username: currentUsername });
-    }
-
     // Find the friend request
-    const friendRequest = currentUser.friendRequests.find(r => 
-      r.from === username && r.to === currentUsername && r.status === 'pending'
-    );
+    const friendRequest = await Friend.findOne({
+      user1: username,
+      user2: currentUsername,
+      status: 'pending'
+    });
 
     if (!friendRequest) {
       return res.status(404).json({
@@ -155,32 +145,10 @@ router.post('/accept-friend', verifyToken, async (req, res) => {
       });
     }
 
-    // Update friend request status
+    // Update status to accepted
     friendRequest.status = 'accepted';
-
-    // Add to friends list
-    currentUser.friends.push({
-      username: username,
-      status: 'accepted'
-    });
-
-    // Update target user's friend request and add to their friends list
-    const targetUser = await User.findOne({ username });
-    if (targetUser) {
-      const targetRequest = targetUser.friendRequests.find(r => 
-        r.from === username && r.to === currentUsername && r.status === 'pending'
-      );
-      if (targetRequest) {
-        targetRequest.status = 'accepted';
-      }
-      targetUser.friends.push({
-        username: currentUsername,
-        status: 'accepted'
-      });
-      await targetUser.save();
-    }
-
-    await currentUser.save();
+    friendRequest.acceptedAt = new Date();
+    await friendRequest.save();
 
     res.json({
       success: true,
@@ -201,16 +169,23 @@ router.get('/friends', verifyToken, async (req, res) => {
   try {
     const currentUsername = req.user.username;
 
-    let currentUser = await User.findOne({ username: currentUsername });
-    if (!currentUser) {
-      currentUser = new User({ username: currentUsername });
-    }
+    const friendUsernames = await Friend.getFriends(currentUsername);
 
-    const friends = currentUser.getAcceptedFriends();
+    // Fetch full user info for each friend
+    const friendsWithInfo = await Promise.all(
+      friendUsernames.map(async (username) => {
+        const user = await User.findOne({ username }).select('username fullName avatar');
+        return user ? {
+          username: user.username,
+          fullName: user.fullName || user.username,
+          avatar: user.avatar || null
+        } : { username, fullName: username, avatar: null };
+      })
+    );
 
     res.json({
       success: true,
-      data: friends
+      data: friendsWithInfo
     });
 
   } catch (error) {
@@ -222,25 +197,62 @@ router.get('/friends', verifyToken, async (req, res) => {
   }
 });
 
-// Get pending friend requests
+// Get pending friend requests (only received requests)
 router.get('/friend-requests', verifyToken, async (req, res) => {
   try {
     const currentUsername = req.user.username;
 
-    let currentUser = await User.findOne({ username: currentUsername });
-    if (!currentUser) {
-      currentUser = new User({ username: currentUsername });
-    }
+    // Only get requests where current user is the receiver (user2)
+    const requests = await Friend.find({
+      user2: currentUsername,
+      status: 'pending'
+    });
 
-    const pendingRequests = currentUser.getPendingRequests();
+    const formattedRequests = requests.map(request => ({
+      from: request.user1,
+      to: request.user2,
+      status: request.status,
+      createdAt: request.createdAt
+    }));
 
     res.json({
       success: true,
-      data: pendingRequests
+      data: formattedRequests
     });
 
   } catch (error) {
     console.error('Get friend requests error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Get sent friend requests
+router.get('/sent-requests', verifyToken, async (req, res) => {
+  try {
+    const currentUsername = req.user.username;
+
+    // Only get requests where current user is the sender (user1)
+    const requests = await Friend.find({
+      user1: currentUsername,
+      status: 'pending'
+    });
+
+    const formattedRequests = requests.map(request => ({
+      to: request.user2,
+      status: request.status,
+      createdAt: request.createdAt
+    }));
+
+    res.json({
+      success: true,
+      data: formattedRequests
+    });
+
+  } catch (error) {
+    console.error('Get sent requests error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -254,14 +266,7 @@ router.get('/verify-friendship/:username', verifyToken, async (req, res) => {
     const currentUsername = req.user.username;
     const targetUsername = req.params.username;
 
-    let currentUser = await User.findOne({ username: currentUsername });
-    if (!currentUser) {
-      currentUser = new User({ username: currentUsername });
-    }
-
-    const isFriend = currentUser.friends.some(friend => 
-      friend.username === targetUsername && friend.status === 'accepted'
-    );
+    const isFriend = await Friend.areFriends(currentUsername, targetUsername);
 
     res.json({
       success: true,
@@ -274,6 +279,85 @@ router.get('/verify-friendship/:username', verifyToken, async (req, res) => {
       success: false,
       message: 'Internal server error'
     });
+  }
+});
+
+// Get current user profile
+router.get('/profile', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select('-_id username email fullName dateOfBirth avatar createdAt');
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    res.json({ success: true, data: user });
+  } catch (error) {
+    console.error('Get profile error:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// Update current user profile
+router.put('/profile', verifyToken, async (req, res) => {
+  try {
+    const { fullName, email, dateOfBirth } = req.body;
+
+    const updates = {};
+    if (typeof fullName === 'string') updates.fullName = fullName;
+    if (typeof email === 'string') updates.email = email;
+    if (typeof dateOfBirth === 'string' || dateOfBirth instanceof Date) updates.dateOfBirth = new Date(dateOfBirth);
+
+    // Ensure email is unique if changed
+    if (updates.email) {
+      const exists = await User.findOne({ email: updates.email, username: { $ne: req.user.username } });
+      if (exists) {
+        return res.status(400).json({ success: false, message: 'Email already in use' });
+      }
+    }
+
+    const user = await User.findOneAndUpdate(
+      { username: req.user.username },
+      { $set: updates },
+      { new: true, projection: '-_id username email fullName dateOfBirth avatar createdAt' }
+    );
+
+    res.json({ success: true, data: user });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// Upload/Change avatar
+router.post('/profile/avatar', verifyToken, upload.single('avatar'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No file uploaded' });
+    }
+
+    const result = await new Promise((resolve, reject) => {
+      cloudinary.uploader.upload_stream(
+        {
+          resource_type: 'image',
+          folder: 'chat-app-avatars',
+          transformation: [{ width: 200, height: 200, crop: 'fill', gravity: 'face' }]
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      ).end(req.file.buffer);
+    });
+
+    const user = await User.findByIdAndUpdate(
+      req.user.userId,
+      { $set: { avatar: result.secure_url } },
+      { new: true, projection: '-_id username email fullName dateOfBirth avatar createdAt' }
+    );
+
+    res.json({ success: true, data: user });
+  } catch (error) {
+    console.error('Upload avatar error:', error);
+    res.status(500).json({ success: false, message: 'Failed to upload avatar' });
   }
 });
 
@@ -290,40 +374,21 @@ router.post('/cancel-friend-request', verifyToken, async (req, res) => {
       });
     }
 
-    // Get or create current user's profile
-    let currentUser = await User.findOne({ username: currentUsername });
-    if (!currentUser) {
-      currentUser = new User({ username: currentUsername });
-    }
-
     // Find and remove the friend request
-    const requestIndex = currentUser.friendRequests.findIndex(r => 
-      r.from === currentUsername && r.to === username && r.status === 'pending'
-    );
+    const friendRequest = await Friend.findOne({
+      user1: currentUsername,
+      user2: username,
+      status: 'pending'
+    });
 
-    if (requestIndex === -1) {
+    if (!friendRequest) {
       return res.status(404).json({
         success: false,
         message: 'Friend request not found'
       });
     }
 
-    // Remove from current user
-    currentUser.friendRequests.splice(requestIndex, 1);
-
-    // Remove from target user
-    const targetUser = await User.findOne({ username });
-    if (targetUser) {
-      const targetRequestIndex = targetUser.friendRequests.findIndex(r => 
-        r.from === currentUsername && r.to === username && r.status === 'pending'
-      );
-      if (targetRequestIndex !== -1) {
-        targetUser.friendRequests.splice(targetRequestIndex, 1);
-        await targetUser.save();
-      }
-    }
-
-    await currentUser.save();
+    await Friend.findByIdAndDelete(friendRequest._id);
 
     res.json({
       success: true,
@@ -352,40 +417,21 @@ router.post('/decline-friend-request', verifyToken, async (req, res) => {
       });
     }
 
-    // Get or create current user's profile
-    let currentUser = await User.findOne({ username: currentUsername });
-    if (!currentUser) {
-      currentUser = new User({ username: currentUsername });
-    }
+    // Find and remove the friend request
+    const friendRequest = await Friend.findOne({
+      user1: username,
+      user2: currentUsername,
+      status: 'pending'
+    });
 
-    // Find and remove the friend request (received)
-    const requestIndex = currentUser.friendRequests.findIndex(r => 
-      r.from === username && r.to === currentUsername && r.status === 'pending'
-    );
-
-    if (requestIndex === -1) {
+    if (!friendRequest) {
       return res.status(404).json({
         success: false,
         message: 'Friend request not found'
       });
     }
 
-    // Remove from current user (receiver)
-    currentUser.friendRequests.splice(requestIndex, 1);
-
-    // Remove from sender user
-    const senderUser = await User.findOne({ username });
-    if (senderUser) {
-      const senderRequestIndex = senderUser.friendRequests.findIndex(r => 
-        r.from === username && r.to === currentUsername && r.status === 'pending'
-      );
-      if (senderRequestIndex !== -1) {
-        senderUser.friendRequests.splice(senderRequestIndex, 1);
-        await senderUser.save();
-      }
-    }
-
-    await currentUser.save();
+    await Friend.findByIdAndDelete(friendRequest._id);
 
     res.json({
       success: true,
@@ -394,6 +440,58 @@ router.post('/decline-friend-request', verifyToken, async (req, res) => {
 
   } catch (error) {
     console.error('Decline friend request error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Remove friend (unfriend)
+router.post('/remove-friend', verifyToken, async (req, res) => {
+  try {
+    const { username } = req.body;
+    const currentUsername = req.user.username;
+
+    if (!username) {
+      return res.status(400).json({
+        success: false,
+        message: 'Username is required'
+      });
+    }
+
+    if (username === currentUsername) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot remove yourself'
+      });
+    }
+
+    // Find the friendship
+    const friendship = await Friend.findOne({
+      $or: [
+        { user1: currentUsername, user2: username, status: 'accepted' },
+        { user1: username, user2: currentUsername, status: 'accepted' }
+      ]
+    });
+
+    if (!friendship) {
+      return res.status(404).json({
+        success: false,
+        message: 'Friendship not found'
+      });
+    }
+
+    // Delete the friendship
+    await Friend.findByIdAndDelete(friendship._id);
+
+    res.json({
+      success: true,
+      message: 'Friend removed successfully'
+    });
+
+  } catch (error) {
+    console.error('Remove friend error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'

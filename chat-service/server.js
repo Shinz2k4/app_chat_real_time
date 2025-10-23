@@ -6,6 +6,7 @@ const cors = require('cors');
 require('dotenv').config();
 
 const chatRoutes = require('./routes/chat');
+const uploadRoutes = require('./routes/upload');
 const { socketAuth } = require('./middleware/auth');
 const ChatHandler = require('./socket/chatHandler');
 
@@ -30,7 +31,7 @@ mongoose.connect(process.env.MONGO_URI, {
   useUnifiedTopology: true,
 })
 .then(() => {
-  console.log('✅ Connected to MongoDB Atlas');
+  console.log('✅ Connected to Message Database (messagedb)');
 })
 .catch((error) => {
   console.error('❌ MongoDB connection error:', error);
@@ -50,6 +51,7 @@ io.on('connection', (socket) => {
 
 // Routes
 app.use('/chat', chatRoutes);
+app.use('/chat', uploadRoutes); // Upload routes under /chat/upload
 
 // Health check endpoint
 app.get('/health', (req, res) => {

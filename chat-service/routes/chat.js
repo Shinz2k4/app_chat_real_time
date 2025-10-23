@@ -7,6 +7,7 @@ const router = express.Router();
 // Get chat history with a friend
 router.get('/history/:friendUsername', verifyToken, async (req, res) => {
   try {
+    console.log(`📜 [ROUTE] GET /history/${req.params.friendUsername} called by ${req.user?.username}`);
     const { friendUsername } = req.params;
     const currentUsername = req.user.username;
     const { page = 1, limit = 50 } = req.query;
@@ -50,7 +51,7 @@ router.get('/history/:friendUsername', verifyToken, async (req, res) => {
     .sort({ timestamp: -1 })
     .limit(limit * 1)
     .skip((page - 1) * limit)
-    .select('sender receiver message timestamp read');
+    .select('sender receiver message messageType attachmentUrl attachmentName attachmentSize timestamp read');
 
     res.json({
       success: true,
@@ -76,11 +77,14 @@ router.get('/history/:friendUsername', verifyToken, async (req, res) => {
 // Mark messages as read
 router.put('/mark-read/:friendUsername', verifyToken, async (req, res) => {
   try {
+    console.log(`📖 [ROUTE] PUT /mark-read/${req.params.friendUsername} called by ${req.user?.username}`);
     const { friendUsername } = req.params;
     const currentUsername = req.user.username;
 
-    // Mark messages as read
-    await Message.updateMany(
+    console.log(`📖 Marking messages as read from ${friendUsername} to ${currentUsername}`);
+
+    // Mark messages as read (no need to verify friendship - user can only mark their own messages)
+    const result = await Message.updateMany(
       {
         sender: friendUsername,
         receiver: currentUsername,
@@ -91,13 +95,16 @@ router.put('/mark-read/:friendUsername', verifyToken, async (req, res) => {
       }
     );
 
+    console.log(`✅ Marked ${result.modifiedCount} messages as read`);
+
     res.json({
       success: true,
-      message: 'Messages marked as read'
+      message: 'Messages marked as read',
+      count: result.modifiedCount
     });
 
   } catch (error) {
-    console.error('Mark read error:', error);
+    console.error('❌ Mark read error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'

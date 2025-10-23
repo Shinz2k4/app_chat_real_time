@@ -3,9 +3,11 @@ const axios = require('axios');
 // Middleware to verify JWT token with auth service
 const verifyToken = async (req, res, next) => {
   try {
+    console.log(`🔐 [AUTH] Verifying token for ${req.method} ${req.originalUrl}`);
     const token = req.header('Authorization')?.replace('Bearer ', '');
     
     if (!token) {
+      console.log('❌ [AUTH] No token provided');
       return res.status(401).json({ 
         success: false, 
         message: 'Access denied. No token provided.' 
@@ -20,16 +22,18 @@ const verifyToken = async (req, res, next) => {
     });
 
     if (response.data.success) {
+      console.log(`✅ [AUTH] Token verified for user: ${response.data.data.user.username}`);
       req.user = response.data.data.user;
       next();
     } else {
+      console.log('❌ [AUTH] Invalid token response:', response.data);
       res.status(401).json({ 
         success: false, 
         message: 'Invalid token.' 
       });
     }
   } catch (error) {
-    console.error('Token verification error:', error.message);
+    console.error('❌ [AUTH] Token verification error:', error.message);
     res.status(401).json({ 
       success: false, 
       message: 'Invalid token.' 
