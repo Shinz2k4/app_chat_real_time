@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../api';
+import AnimatedBackground from './AnimatedBackground';
 
 export default function Register({ onBack, onRegistered }) {
   const [fullName, setFullName] = useState('');
@@ -40,6 +41,7 @@ export default function Register({ onBack, onRegistered }) {
 
   return (
     <div className="auth-page">
+      <AnimatedBackground />
       <div className="auth-container auth-container-register">
         <div className="auth-logo">
           <h1 className="auth-app-name">SokishiX</h1>

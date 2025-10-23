@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../api';
+import AnimatedBackground from './AnimatedBackground';
 
 export default function Login({ onRegister, onLoggedIn }) {
   const [usernameOrEmail, setUsernameOrEmail] = useState('');
@@ -31,6 +32,7 @@ export default function Login({ onRegister, onLoggedIn }) {
 
   return (
     <div className="auth-page">
+      <AnimatedBackground />
       <div className="auth-container">
         <div className="auth-logo">
           <h1 className="auth-app-name">SokishiX</h1>
